@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,11 +32,16 @@ public class Download {
 						homeDirectory, homeDirectory);
 
 		final List<Bhajan> bhajans = new ArrayList<Bhajan>();
-		// downloadFromBhajanBrinda(bhajans);
-		// downloadRegion7EnglishBhajans(bhajans);
-		// downloadFromSaiDarshan(bhajans);
+		downloadFromBhajanBrinda(bhajans);
+		downloadRegion7EnglishBhajans(bhajans);
+		downloadFromSaiDarshan(bhajans);
 		downloadFromSaiScotland(bhajans);
 		// downloadFromSathyaSaiOrg(bhajans);
+		for (Bhajan bhajan : bhajans) {
+			if (!bhajan.getLyrics().trim().contains("\n")) {
+				System.out.printf("One line %s!\n", bhajan.getLyrics());
+			}
+		}
 
 		final Workbook workbook = new HSSFWorkbook();
 		final String opFile = homeDirectory + "/bhajans/bhajans.xls";
@@ -48,8 +54,10 @@ public class Download {
 			// Create a row and put some cells in it. Rows are 0 based.
 			Row row = sheet.createRow(rowNum++);
 			// Create a cell and put a value in it.
-			row.createCell(0).setCellValue(bhajan.getLyrics().trim());
-			row.createCell(1).setCellValue(bhajan.getMeaning().trim());
+			row.createCell(0).setCellValue(
+					trimBhajanContent(bhajan.getLyrics()));
+			row.createCell(1).setCellValue(
+					trimBhajanContent(bhajan.getMeaning()));
 
 		}
 
@@ -57,6 +65,15 @@ public class Download {
 		workbook.close();
 		os.close();
 		System.out.printf("Writing file to %s.\n", opFile);
+	}
+
+	private static final String trimBhajanContent(final String bhajan) {
+		String[] lines = bhajan.trim().split("\n", -1);
+		final StringBuilder builder = new StringBuilder();
+		for (String line : lines) {
+			builder.append(line.trim()).append("\n");
+		}
+		return builder.toString();
 	}
 
 	private static void downloadFromSaiDarshan(List<Bhajan> bhajans)
@@ -140,19 +157,30 @@ public class Download {
 				if (href.startsWith("http://bhajanabrinda.com/mod/data/view.php?")
 						&& href.contains("rid")) {
 					final String bhajanName = anchor.text();
-					final File bhajanFile = new File(bhajanDirectory,
-							bhajanName + ".html");
-					if (!bhajanFile.exists() || bhajanFile.length() <= 0) {
-						bhajanFile.createNewFile();
-						final FileOutputStream os = new FileOutputStream(
-								bhajanFile);
-						final URL url = new URL(href);
-						System.out.printf("Downloading [%s] from [%s]. \n",
-								bhajanName, href);
-						IOUtils.copy(url.openStream(), os);
-						os.close();
+
+					InputStream is = Download.class
+							.getResourceAsStream("/bhajanabrinda/downloaded/"
+									+ bhajanName + ".html");
+					final boolean isBundled = is != null;
+					if (!isBundled) {
+						final File bhajanFile = new File(bhajanDirectory,
+								bhajanName + ".html");
+						if (!bhajanFile.exists() || bhajanFile.length() <= 0) {
+							// This file is neither bundled nor already
+							// downloaded
+							bhajanFile.createNewFile();
+							final FileOutputStream os = new FileOutputStream(
+									bhajanFile);
+							final URL url = new URL(href);
+							System.out.printf("Downloading [%s] from [%s]. \n",
+									bhajanName, href);
+							IOUtils.copy(url.openStream(), os);
+							os.close();
+							is = new FileInputStream(bhajanFile);
+						}
 					}
-					final Document document = Jsoup.parse(bhajanFile, "UTF-8");
+					final Document document = Jsoup.parse(is, "UTF-8",
+							"http://www.bhajanabrinda.com");
 					final Elements nodes = document.getElementsByTag("td");
 					final String lyric = htmlToText(nodes.get(1).outerHtml()
 							.replace("<strong>", "").replace("</strong>", ""));
@@ -165,7 +193,8 @@ public class Download {
 	}
 
 	private static String htmlToText(final String html) {
-		return html.replace("<br>", "\n").replaceAll("\\<[^>]+\\>", "")
+		return html.replace("<br>", "\n").replace("</p>", "\n")
+				.replace("</div>", "\n").replaceAll("\\<[^>]+\\>", "")
 				.replace("&amp;", "&").replace("&gt;", ">")
 				.replace("&lt;", "<");
 	}
